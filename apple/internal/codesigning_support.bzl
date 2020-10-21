@@ -239,6 +239,12 @@ def _should_sign_simulator_bundles(ctx):
       True/False for if the bundle should be signed.
 
     """
+    if "apple.codesign_simulator_bundles" in ctx.var:
+        print("warning: --define apple.codesign_simulator_bundles is deprecated, please switch to --features apple.skip_codesign_simulator_bundles")
+
+    if "apple.skip_codesign_simulator_bundles" in ctx.features:
+        return False
+
     rule_descriptor = rule_support.rule_descriptor(ctx)
     if not rule_descriptor.skip_simulator_signing_allowed:
         return True
