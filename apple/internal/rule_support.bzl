@@ -101,7 +101,6 @@ def _describe_rule_type(
         requires_provisioning_profile = True,
         requires_signing_for_device = True,
         rpaths = [],
-        skip_simulator_signing_allowed = True,
         stub_binary_path = None):
     """Creates a rule descriptor struct containing all the platform and product specific configs.
 
@@ -153,8 +152,6 @@ def _describe_rule_type(
         requires_signing_for_device: Whether signing is required when building for devices (as
             opposed to simulators).
         rpaths: List of rpaths to add to the linker.
-        skip_simulator_signing_allowed: Whether this rule is allowed to skip signing when building
-            for the simulator.
         stub_binary_path: Xcode SDK root relative path to the stub binary to copy as this rule's
             binary artifact.
 
@@ -196,7 +193,6 @@ def _describe_rule_type(
         requires_provisioning_profile = requires_provisioning_profile,
         requires_signing_for_device = requires_signing_for_device,
         rpaths = rpaths,
-        skip_simulator_signing_allowed = skip_simulator_signing_allowed,
         stub_binary_path = stub_binary_path,
     )
 
@@ -378,7 +374,6 @@ _RULE_TYPE_DESCRIPTORS = {
                 "@executable_path/Frameworks",
                 "@loader_path/Frameworks",
             ],
-            skip_simulator_signing_allowed = False,
         ),
         # ios_unit_test
         apple_product_type.unit_test_bundle: _describe_rule_type(
@@ -402,7 +397,6 @@ _RULE_TYPE_DESCRIPTORS = {
                 "@executable_path/Frameworks",
                 "@loader_path/Frameworks",
             ],
-            skip_simulator_signing_allowed = False,
         ),
     },
     "macos": {
@@ -696,7 +690,6 @@ _RULE_TYPE_DESCRIPTORS = {
                 "@executable_path/Frameworks",
                 "@loader_path/Frameworks",
             ],
-            skip_simulator_signing_allowed = False,
         ),
         # tvos_unit_test
         apple_product_type.unit_test_bundle: _describe_rule_type(
@@ -720,7 +713,6 @@ _RULE_TYPE_DESCRIPTORS = {
                 "@executable_path/Frameworks",
                 "@loader_path/Frameworks",
             ],
-            skip_simulator_signing_allowed = False,
         ),
     },
     "watchos": {
