@@ -244,6 +244,7 @@ def _should_sign_simulator_bundles(ctx):
 
     """
     if "apple.codesign_simulator_bundles" in ctx.var:
+        # buildifier: disable=print
         print("warning: --define apple.codesign_simulator_bundles is deprecated, please switch to --features apple.skip_codesign_simulator_bundles")
 
     features = features_support.compute_enabled_features(
