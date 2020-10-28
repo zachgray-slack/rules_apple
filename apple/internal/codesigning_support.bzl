@@ -247,7 +247,7 @@ def _should_sign_simulator_bundles(ctx):
         requested_features = ctx.features,
         unsupported_features = ctx.disabled_features,
     )
-    return "apple.skip_codesign_simulator_bundles" not in features:
+    return "apple.skip_codesign_simulator_bundles" not in features
 
 
 def _should_sign_bundles(ctx):
