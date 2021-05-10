@@ -30,7 +30,7 @@ def _cpu_string(platform_type, settings):
         macos_cpus = settings["//command_line_option:macos_cpus"]
         if macos_cpus:
             return "darwin_{}".format(macos_cpus[0])
-        return "darwin_x86_64"
+        return settings["//command_line_option:host_cpu"]
     if platform_type == "tvos":
         tvos_cpus = settings["//command_line_option:tvos_cpus"]
         if tvos_cpus:
@@ -77,6 +77,7 @@ _apple_rule_base_transition_inputs = [
     "//command_line_option:apple_crosstool_top",
     "//command_line_option:apple_grte_top",
     "//command_line_option:cpu",
+    "//command_line_option:host_cpu",
     "//command_line_option:ios_multi_cpus",
     "//command_line_option:macos_cpus",
     "//command_line_option:tvos_cpus",
