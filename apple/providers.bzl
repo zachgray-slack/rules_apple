@@ -657,3 +657,13 @@ a dependency is a watchOS static framework should use this provider to describe
 that requirement.
 """,
 )
+
+XCFrameworkInfo = provider(
+    doc = "todo",
+    fields = {
+        "framework_name": "string",
+        "framework_binary_path": "string",
+        "framework_dirname": "string",
+        "framework": "file"
+    }
+)

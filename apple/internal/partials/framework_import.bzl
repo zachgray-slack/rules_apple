@@ -21,6 +21,7 @@ load(
 load(
     "@build_bazel_rules_apple//apple:providers.bzl",
     "AppleFrameworkImportInfo",
+    "XCFrameworkInfo",
 )
 load(
     "@build_bazel_rules_apple//apple/internal:bitcode_support.bzl",
@@ -144,6 +145,35 @@ def _framework_import_partial_impl(
         # Pass through all binaries, files, and relevant info as args.
         args = actions.args()
 
+        # Since xcframeworks rely on generated folders and we won't have File handles to help us find the framework
+        # binary, we'll compute the framework binary path here.
+        # Known issue: user needs to provide a name attr which matches the binary name or the following logic
+        # will fail
+        if len(framework_binaries_by_framework[framework_basename]) == 0 and "xcframework" in framework_basename:
+            framework_binary_basename = framework_basename.replace("_xcframework.framework", "")
+            framework_root = files_by_framework[framework_basename][0].path
+            framework_binary_path = paths.join(framework_root, framework_binary_basename)
+            args.add("--framework_binary", framework_binary_path)
+            args.add_all(files_by_framework[framework_basename], before_each="--framework_file")
+        else:
+            for framework_binary in framework_binaries_by_framework[framework_basename]:
+                args.add("--framework_binary", framework_binary.path)
+            for file in files_by_framework[framework_basename]:
+                args.add("--framework_file", file.path)
+
+        # struggling to find the info provider here
+        # but ideally would use this, not the above.
+
+#        xcframework_binaries = [
+#            x[XCFrameworkInfo].framework_binary_path
+#            for x in targets
+#            if XCFrameworkInfo in x
+#        ]
+#        print(len(xcframework_binaries))
+#        for b in xcframework_binaries:
+#            print('added xcbinary')
+#            args.add("--framework_binary", b)
+
         for framework_binary in framework_binaries_by_framework[framework_basename]:
             args.add("--framework_binary", framework_binary.path)
 
@@ -156,9 +186,9 @@ def _framework_import_partial_impl(
         args.add("--output_zip", framework_zip.path)
 
         args.add("--temp_path", temp_framework_bundle_path)
-
-        for file in files_by_framework[framework_basename]:
-            args.add("--framework_file", file.path)
+#
+#        for file in files_by_framework[framework_basename]:
+#            args.add("--framework_file", file.path)
 
         codesign_args = codesigning_support.codesigning_args(
             entitlements = None,

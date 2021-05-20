@@ -56,6 +56,10 @@ load(
     "SwiftUsageInfo",
     "swift_common",
 )
+load(
+    "@build_bazel_rules_apple//apple:providers.bzl",
+    "XCFrameworkInfo",
+)
 
 def _is_swiftmodule(path):
     """Predicate to identify Swift modules/interfaces."""
@@ -160,9 +164,13 @@ def _grouped_framework_files(framework_imports):
 
     return framework_groups
 
-def _objc_provider_with_dependencies(ctx, objc_provider_fields):
+def _objc_provider_with_dependencies(ctx, objc_provider_fields, xcframeworkinfo = None):
     """Returns a new Objc provider which includes transitive Objc dependencies."""
     objc_provider_fields["providers"] = [dep[apple_common.Objc] for dep in ctx.attr.deps]
+    if xcframeworkinfo != None:
+        # todo: fix the lost `-framework` flag that's happening here due to use of depset
+        opts = ["-F%s" % xcframeworkinfo.framework_dirname, "-framework", xcframeworkinfo.framework_name]
+        objc_provider_fields["providers"].append(apple_common.new_objc_provider(linkopt = depset(opts, order = "topological") ))
     return apple_common.new_objc_provider(**objc_provider_fields)
 
 def _cc_info_with_dependencies(ctx, header_imports):
@@ -249,32 +257,14 @@ def _framework_search_paths(header_imports):
     else:
         return []
 
-def _get_framework_imports(ctx):
-    if not ctx.attr.xcframework_platform_paths:
-        return ctx.files.framework_imports
-    curr_patform = str(ctx.fragments.apple.single_arch_platform)
-    if curr_patform not in ctx.attr.xcframework_platform_paths:
-        fail(
-            "Missing framework path mapping for platform `{}`; is this platform supported?"
-                .format(str(curr_patform)),
-        )
-    else:
-        platform_path = ctx.attr.xcframework_platform_paths[curr_patform]
-        if not platform_path.endswith((".framework", ".framework/")):
-            fail("xcframework path `{}` doesn't end with `.framework`".format(platform_path))
-        framework_imports_for_platform = []
-        for f in ctx.files.framework_imports:
-            if platform_path in f.short_path:
-                framework_imports_for_platform.append(f)
-        if len(framework_imports_for_platform) == 0:
-            fail("couldn't find framework at path `{}`".format(platform_path))
-        return framework_imports_for_platform
-
 def _apple_dynamic_framework_import_impl(ctx):
     """Implementation for the apple_dynamic_framework_import rule."""
     providers = []
 
-    framework_imports = _get_framework_imports(ctx)
+    framework_imports, xcframeworkinfo = (_preprocess_xcframeworks(ctx))
+    if xcframeworkinfo != None:
+        providers.append(xcframeworkinfo)
+
     bundling_imports, header_imports, module_map_imports = (
         _classify_framework_imports(ctx.var, framework_imports)
     )
@@ -299,7 +289,7 @@ def _apple_dynamic_framework_import_impl(ctx):
         [] if ctx.attr.bundle_only else _all_framework_binaries(framework_groups),
     )
 
-    objc_provider = _objc_provider_with_dependencies(ctx, objc_provider_fields)
+    objc_provider = _objc_provider_with_dependencies(ctx, objc_provider_fields, xcframeworkinfo)
     cc_info = _cc_info_with_dependencies(ctx, header_imports)
     providers.append(objc_provider)
     providers.append(cc_info)
@@ -308,14 +298,15 @@ def _apple_dynamic_framework_import_impl(ctx):
         framework_dirs = framework_dirs_set,
         framework_files = depset(framework_imports),
     ))
-
     return providers
 
 def _apple_static_framework_import_impl(ctx):
     """Implementation for the apple_static_framework_import rule."""
     providers = []
 
-    framework_imports = _get_framework_imports(ctx)
+    framework_imports, xcframeworkinfo = (_preprocess_xcframeworks(ctx))
+    if xcframeworkinfo != None:
+        providers.append(xcframeworkinfo)
     _, header_imports, module_map_imports = _classify_framework_imports(ctx.var, framework_imports)
 
     transitive_sets = _transitive_framework_imports(ctx.attr.deps)
@@ -358,7 +349,7 @@ def _apple_static_framework_import_impl(ctx):
             if swiftmodule:
                 objc_provider_fields.update(_ensure_swiftmodule_is_embedded(swiftmodule))
 
-    providers.append(_objc_provider_with_dependencies(ctx, objc_provider_fields))
+    providers.append(_objc_provider_with_dependencies(ctx, objc_provider_fields, xcframeworkinfo))
     providers.append(_cc_info_with_dependencies(ctx, header_imports))
 
     bundle_files = [x for x in framework_imports if ".bundle/" in x.short_path]
@@ -377,11 +368,60 @@ def _apple_static_framework_import_impl(ctx):
 
     return providers
 
+def _preprocess_xcframeworks(ctx):
+    xcframework_plists = []
+    for f in ctx.files.framework_imports:
+        if f.path.endswith(".xcframework/Info.plist"):
+            xcframework_plists.append(f)
+        # todo: ensure the user didnt glob multiple frameworks in next to the xcframework?
+    if len(xcframework_plists) == 0:
+        return ctx.files.framework_imports, None
+    if len(xcframework_plists) > 1:
+        fail("expected only 1 xcframework")
+    xcframework_plist = xcframework_plists[0]
+    platform = ctx.fragments.apple.single_arch_platform
+    platform_string = str(platform.platform_type)
+    if platform_string == "macos":
+        platform_string = "macosx"
+    environment = "" if platform.is_device else "-simulator"
+    triple = "{arch}-apple-{platform}{environment}".format(
+        environment = environment,
+        platform = platform_string,
+        arch = ctx.fragments.apple.single_arch_cpu
+    )
+    dir_name = "%s_xcframework.framework" % ctx.attr.name
+    selected_framework = ctx.actions.declare_directory(dir_name)
+    ctx.actions.run(
+        executable = ctx.executable._xcframework_selector,
+        arguments = [triple, xcframework_plist.path, selected_framework.path],
+        inputs = ctx.files.framework_imports,
+        outputs = [selected_framework],
+        mnemonic = "PreprocessXCFramework",
+    )
+    framework_binary_basename = selected_framework.basename.replace("_xcframework.framework", "")
+    framework_root = selected_framework.path
+    framework_binary_path = paths.join(framework_root, framework_binary_basename)
+    return [selected_framework], XCFrameworkInfo(
+        framework = selected_framework,
+        framework_name = paths.split_extension(selected_framework.basename)[0],
+        framework_binary_path = framework_binary_path,
+        framework_dirname = selected_framework.dirname,
+    )
+
 _common_attrs = {
-    "xcframework_platform_paths": attr.string_dict(
+    "_xcframework_selector": attr.label(
+        cfg = "host",
+        default = Label("@build_bazel_rules_apple//tools/xcframework_selector"),
+        executable = True,
+    ),
+    "framework_imports": attr.label_list(
+        providers = [XCFrameworkInfo],
+        allow_empty = False,
+        allow_files = True,
+        mandatory = True,
         doc = """
-Key-value map of platforms (IOS_DEVICE, IOS_SIMULATOR, MACOS, TVOS_DEVICE, TVOS_SIMULATOR,
-WATCHOS_DEVICE, WATCHOS_SIMULATOR, CATALYST) to the corresponding .framework (containing all supported architectures) relative to the framework_import.
+The list of files under a .framework directory which are provided to Apple based targets that depend
+on this target.
 """,
     ),
 }
@@ -390,15 +430,6 @@ apple_dynamic_framework_import = rule(
     implementation = _apple_dynamic_framework_import_impl,
     fragments = ["apple"],
     attrs = dicts.add(_common_attrs, {
-        "framework_imports": attr.label_list(
-            allow_empty = False,
-            allow_files = True,
-            mandatory = True,
-            doc = """
-The list of files under a .framework directory which are provided to Apple based targets that depend
-on this target.
-""",
-        ),
         "deps": attr.label_list(
             doc = """
 A list of targets that are dependencies of the target being built, which will be linked into that

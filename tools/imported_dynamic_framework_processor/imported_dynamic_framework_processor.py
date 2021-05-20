@@ -71,8 +71,14 @@ def _copy_framework_file(framework_file, executable, output_path):
   temp_framework_dirs = os.path.dirname(temp_framework_path)
   if not os.path.exists(temp_framework_dirs):
     os.makedirs(temp_framework_dirs)
-  shutil.copy(framework_file, temp_framework_path)
-  os.chmod(temp_framework_path, 0o755 if executable else 0o644)
+  if os.path.isdir(framework_file):
+    shutil.rmtree(temp_framework_path)
+    shutil.copytree(framework_file, temp_framework_path, dirs_exist_ok=True)
+  else:
+    if os.path.exists(temp_framework_path):
+        os.remove(temp_framework_path)
+    shutil.copy(framework_file, temp_framework_path)
+    os.chmod(temp_framework_path, 0o755 if executable else 0o644)
   return 0
 
 
